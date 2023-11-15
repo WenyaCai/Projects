@@ -1,0 +1,562 @@
+---
+title: "MGSC 661 Midterm Project"
+author: "Wenya Cai"
+date: "2023-10-23"
+output: 
+  html_document:
+    toc: true
+    theme: united
+---
+# Libraries and Dataset
+## Libraries
+```{r,warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(MASS)
+library(corrr)
+library(ggcorrplot)
+library(car)
+library(lmtest)
+library(plm)
+library(ggpubr)
+library(splines)
+library(boot)
+library(moments)
+library(kableExtra)
+```
+
+## Dataset
+```{r}
+data = read.csv("IMDB_data_Fall_2023.csv")
+```
+# Data Pre-processing
+## Drop Unnecessary Labels
+There are three labels in the dataset, so we only keep `movie_id` for simplicity.
+```{r}
+drop = c("movie_title","imdb_link")
+data = data[,!(names(data) %in% drop)]
+```
+
+## Categorical data
+To help us better understand the dataset, we take a look at all the categorical data.
+```{r, echo=FALSE}
+categorical_vars <- names(data)[sapply(data, function(x) is.factor(x) | is.character(x))]
+categorical_vars_df <- data.frame(
+  Variable = categorical_vars
+)
+
+# Use kable() to create a pretty table
+kable(categorical_vars_df, "html", caption = "List of Categorical Variables") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+### Factorize categorical data and more
+we pay closer attention to all the predictors. \
+`aspect_ratio` seems numeric, but take a closer look - it should be taken as categorical values. \
+we also want to see if movies with more genres are likely to have higher scores, since it may indicate richer content.Or, conversely, more genres will lead to lower scores, as it may cause confusion or a lack of focus in the movie's narrative and theme.
+```{r, message=FALSE}
+data[] <- lapply(data, function(x) if (is.character(x)) as.factor(x) else x)
+
+data$aspect_ratio <- as.factor(data$aspect_ratio) 
+categorical_vars <- c(categorical_vars, "aspect_ratio")
+data$genres_count = str_count(data$genres, fixed("|")) + 1 #count how many genres are there
+attach(data)
+```
+
+### Handle Skewness in Categorical Data
+Some categorical variables has unbalanced categories distribution. \
+To address skewness in categorical data, such as the imbalanced distribution of categories in a maturity_rating variable, it's effective to consolidate less frequent categories.
+
+```{r}
+table(maturity_rating)
+```
+
+For instance, merging infrequent ratings like "G", "R", and "Unrated" into an "Other_Ratings" category, while retaining more common ones like "PG" and "PG-13", helps prevent overfitting and maintain model stability without significant loss of information. This balances the need to reduce category skewness with preserving meaningful category distinctions.
+
+```{r,message=FALSE}
+data <- data %>%
+  mutate(
+    maturity_rating = case_when(
+      maturity_rating == c("PG") ~ "PG",
+      maturity_rating == c("PG-13") ~ "PG-13",
+      maturity_rating == c("R") ~ "R",
+      TRUE ~ "other_ratings"
+    )
+  )
+
+data <- data %>%
+  mutate(
+    language = case_when(
+      language == c("English") ~ "English",
+      TRUE ~ "other_languages"
+    )
+  )
+
+data <- data %>%
+  mutate(
+    country = case_when(
+      country == c("USA") ~ "USA",
+      country == c("UK") ~ "UK",
+      TRUE ~ "other_countries"
+    )
+  )
+
+data <- data %>%
+  mutate(
+    distributor = case_when(
+      distributor == c("Warner Bros.") ~ "Warner Bros.",
+      distributor == c("Universal Pictures") ~ "Universal Pictures",
+      distributor == c("Paramount Pictures") ~ "Paramount Pictures",
+      distributor == c("Twentieth Century Fox") ~ "Twentieth Century Fox",
+      distributor == c("Columbia Pictures Corporation") ~ "Columbia Pictures Corporation",
+      TRUE ~ "other_distributors"
+    )
+  )
+
+data <- data %>%
+  mutate(
+    production_company = case_when(
+      production_company == c("Warner Bros.") ~ "Warner Bros.",
+      production_company == c("Universal Pictures") ~ "Universal Pictures",
+      production_company == c("Paramount Pictures") ~ "Paramount Pictures",
+      production_company == c("Twentieth Century Fox") ~ "Twentieth Century Fox",
+      production_company == c("Columbia Pictures Corporation") ~ "Columbia Pictures Corporation",
+      production_company == c("New Line Cinema") ~ "New Line Cinema",
+      TRUE ~ "other_production_companies"
+    )
+  )
+
+attach(data)
+```
+Also, those directors with frequent appearances in movies may have a effect on imdb scores. Thus, we add such indicator.
+```{r,message=FALSE}
+director_counts = table(data$director)
+director_75th_percentile = quantile(director_counts, 0.75)
+data$director_top25p = ifelse(director_counts[data$director] >= director_75th_percentile, 1, 0)
+cine_counts = table(data$cinematographer)
+cine_75th_percentile = quantile(cine_counts, 0.75)
+data$cine_top25p = ifelse(cine_counts[data$cinematographer] >= cine_75th_percentile , 1, 0)
+attach(data)
+```
+
+
+## Mumerical Data
+### Handle Skewness in Numerical Data
+We want to see the skewness in the numerical data by using `skewness()` function. Based on the skewness value, each column is categorized as "Symmetric", "Moderately Skewed", or "Highly Skewed". \
+The variables listed below exhibit the highest skewness and therefore require careful consideration when used as predictors in our model. This is because highly skewed features can potentially bias the model's performance, leading to inaccurate predictions.
+```{r}
+skewness_values = c()
+skewness_degrees = c()
+num_columns = sapply(data, is.numeric) 
+for (column in names(data[, num_columns])) {
+  skew_value <- round(skewness(data[[column]]),2)
+  if (skew_value >= -0.5 && skew_value <= 0.5) {
+    skew_degree <- "Symmetric"
+  } else if (skew_value > 0.5 && skew_value <= 1 || skew_value < -0.5 && skew_value >= -1) {
+    skew_degree <- "Moderated Skewed"
+  } else if (skew_value < -1 || skew_value > 1) {
+    skew_degree <- "Highly Skewed"
+  }
+  skewness_values <- c(skewness_values, skew_value)
+  skewness_degrees <- c(skewness_degrees, skew_degree) 
+}
+skewness_results <- data.frame(
+  Column = names(data[, num_columns]),
+  Skewness = skewness_values,
+  Skewness_Degree = skewness_degrees
+)
+
+skewness_results_abs <- skewness_results[order(abs(skewness_results$Skewness), decreasing = TRUE), ]
+skewness_results_abs=skewness_results_abs %>% rename("Abs Skewness" = Skewness)
+
+head(skewness_results_abs,5) %>% 
+  knitr::kable("html", caption = "Top Skewed Numerical Columns")
+```
+Thus, we do a log transformation to reduce the impact of those highly skewed variables.
+Since `nb_news_article` has 0 in it, we need to log transform `nb_news_article`+1 to avoid getting negative infinity.
+```{r,message= FALSE,warning=FALSE}
+data$movie_meter_IMDBpro = log10(data$movie_meter_IMDBpro)
+data$actor1_star_meter = log10(data$actor1_star_meter)
+data$actor2_star_meter = log10(data$actor2_star_meter)
+data$actor3_star_meter = log10(data$actor3_star_meter)
+data$nb_news_articles = log10(data$nb_news_articles+1)
+data$movie_budget = log10(data$movie_budget)
+attach(data)
+```
+
+# Feature Selection and Model Building
+We first inspect all the predictors and their relationship with dependent variable `imdb_score`.
+## Visual Selection from plots
+### Example: `imdb_score`'s Relationship with `release_year`
+Note that x-axis labels need to be rotated for better readability.
+```{r}
+data1 = data
+data1$release_year <- as.factor(data$release_year)
+ggplot(data1, aes(x=release_year,y=imdb_score)) + geom_point() + stat_summary(fun=mean, geom="line", aes(group=1), color="red", size=1) + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+```{r}
+ggplot(data1, aes(x=release_year, y=imdb_score)) + 
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+\
+from the above graph, there seems like a relationship between `imdb_score` and `release_year`. Older films tend to have higher scores. Repeat the same process to the rest of the variables.\
+
+Drop `release_day`, `release_month` in our model since there's no visible relationship after inspection. \
+We also drop `genres` as we will be using dummified genre predictors, and drop names of actors as we will use star meter from IMDB to measure their impact. `plot_keywords` contains too much information, we will disregard it for now.
+
+## Linear Regression
+We first include all the predictors we found possibly significant.
+
+```{r}
+reg = lm(imdb_score ~ movie_budget+release_year+duration+language+country+maturity_rating+aspect_ratio+distributor+nb_news_articles+director_top25p+actor1_star_meter+actor2_star_meter+actor3_star_meter+colour_film+nb_faces+action+adventure+scifi+thriller+musical+romance+western+sport+horror+drama+war+animation+crime+movie_meter_IMDBpro+production_company+cine_top25p+genres_count)
+```
+### Stepwise Variable Selection for Linear Regression
+To identify the model that best balances goodness-of-fit with simplicity, we use stepwise Akaike Information Criterion (AIC) method.
+```{r}
+stepAIC(reg,trace = FALSE)
+```
+This provide us with a foundation model to further fine-tune.
+```{r}
+lreg = lm(imdb_score ~  movie_budget + release_year + duration + 
+    language + country + maturity_rating + nb_news_articles + 
+    director_top25p + actor1_star_meter + colour_film + nb_faces + 
+    action + musical + romance + western + sport + horror + drama + 
+    animation + crime + movie_meter_IMDBpro + cine_top25p)
+```
+
+### Linearity Test
+We use Residual Plots.
+```{r}
+res_plots <- residualPlots(lreg)
+# Print the test statistics
+print(res_plots)
+```
+Tuckey test has very small p value, thus the model is unlikely to be linear. \
+We select predictors with large p value, more specifically, p value > 0.1, and consider them likely linear, and the rest is otherwise.\
+In this case, `duration`,`nb_news_articles`,`actor1_star_meter`, and `movie_meter_IMDBpro` are likely not linear.
+
+## Non-linear Regression
+
+As mentioned above, `duration`,`nb_news_articles`,`actor1_star_meter`, and `movie_meter_IMDBpro` are not likely linear predictors.\
+They are all significant predictors with low p-values. 
+```{r}
+pd = ggplot(data, aes(x=duration,y=imdb_score)) + geom_point()
+pn = ggplot(data, aes(x=nb_news_articles,y=imdb_score)) + geom_point()
+pa = ggplot(data, aes(x=movie_budget,y=imdb_score)) + geom_point()
+pan = ggplot(data, aes(x=actor2_star_meter,y=imdb_score)) + geom_point()
+pm = ggplot(data, aes(x=movie_meter_IMDBpro,y=imdb_score)) + geom_point()
+ggarrange( pd, pn,pa,pan,pm + rremove("x.text"), 
+          ncol = 3, nrow = 2)
+```
+\
+We try polynomials first. We test up to d=5 for each variable.
+
+```{r}
+set.seed(661)
+min_mse = Inf
+min_i = 0
+min_j = 0
+min_k = 0
+min_l = 0
+for (i in 1:5) {
+  for (j in 1:5){
+    for (k in 1:5) {
+      for(l in 1:5){
+            fit=glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + western + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,i) + poly(duration,j) + poly(nb_news_articles,k) + poly(movie_meter_IMDBpro,l) ,data = data)
+            
+            mse_result =cv.glm(fit, K=10,data = data)$delta[1]
+            if (mse_result < min_mse) {
+              min_mse = mse_result
+              min_i = i
+              min_j = j
+              min_k = k
+              min_l = l
+
+          }
+        }
+    }
+  }
+ }
+
+min_mse
+min_i 
+min_j 
+min_k
+min_l
+```
+```{r}
+model = lm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + western + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data)
+```
+
+
+# Model Fine Tuning
+We want to further refine the model we have as above, so next we are going to adjust for three common model issues: Heteroskedasticity, outliers, and Collinearity.
+## Heteroskedasticity
+
+First, we conduct visual funnel test.
+```{r}
+residualPlot(model)
+```
+
+Looks like a funnel shape, suggesting Heteroskedasticity. To double check, we further conduct a NCV test. Note that we are using `lm()` instead of `glm()` as `ncvTest()` only consider the former.
+```{r}
+ncvTest(model)
+```
+p value is way smaller than threshold 0.05, further confirming Heteroskedasticity. 
+We need to correct Heteroskedasticity errors.
+
+```{r}
+coeftest(model, vcov=vcovHC(model, type="HC1"))
+```
+we may consider remove `western`. Use 10-fold to check the change in MSE.
+
+```{r}
+set.seed(661)
+m1 = glm( imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + western + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data)
+
+m2 =  glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data)
+cv.glm(m1, K=10,data = data)$delta[1]
+cv.glm(m2, K=10,data = data)$delta[1]
+```
+We decided to remove it, as MSE decreased after the removal.
+
+
+## Outliers
+We run a bonferroni test, since the size of data may lead to difficulties of visual test on outliers.
+```{r}
+outlierTest(m2)
+```
+
+We should remove the outliers and see model performance again.
+```{r}
+set.seed(661)
+data_cleaned = data[-c(1581,395,1806,316,191,989,599,1255)]
+m2 =  glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data)
+
+m3  =  glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data_cleaned)
+cv.glm(m2, K=10,data = data)$delta[1]
+cv.glm(m3, K=10,data = data_cleaned)$delta[1]
+```
+The MSE decreased, so we move on with `data_cleaned`.
+
+## Handling Collinearity
+### Collinearity Matrix
+```{r}
+num_vars <- c("release_year", "nb_faces","movie_budget")
+
+num_data <- data_cleaned[, num_vars]
+
+# Applying polynomial transformations
+num_data$duration_p <- poly(data_cleaned$duration, 2)
+num_data$nb_news_articles_p <- poly(data_cleaned$nb_news_articles, 2)
+num_data$movie_meter_IMDBpro_p <- poly(data_cleaned$movie_meter_IMDBpro, 4)
+num_data$actor1_star_meter_p <- poly(data_cleaned$actor1_star_meter, 5)
+
+
+corr_matrix <- cor(num_data)
+ggcorrplot(corr_matrix,  
+           colors = c("#E46726", "white", "#6D9EC1"),
+           outline.color = "white",
+           ggtheme = ggplot2::theme_gray)
+```
+poly(`movie_meter_IMDBpro`,1) seems to have high correlation with poly(`nb_news_articles`,1).
+```{r}
+corr_matrix["movie_meter_IMDBpro_p.1", "nb_news_articles_p.1"]
+```
+After further inspection, the correlation between these two is above threshold -0.8 to cause collinearity, according to Rule of thumb. 
+
+### Variance inflation factors
+
+To double check collinearity, we use Variance inflation factors(VIF) to measures how variance increases with the addition of a variable.
+```{r}
+vif(m3)
+```
+No visible collinearity since VIF < 4 for all variables.
+
+## Re-Adjust polynomial degress
+now, since we make changes to the model predictors, we may need to consider re-run the for loop and adjust polynomial degrees.
+```{r}
+set.seed(661)
+data_cleaned = data[-c(1581,395,1806,316,191,989,599,1255)]
+min_mse = Inf
+min_i = 0
+min_j = 0
+min_k = 0
+min_l = 0
+for (i in 1:5) {
+  for (j in 1:5){
+    for (k in 1:5) {
+      for(l in 1:5){
+            fit=glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,i) + poly(duration,j) + poly(nb_news_articles,k) + poly(movie_meter_IMDBpro,l),data = data_cleaned)
+            
+            mse_result =cv.glm(fit, K=10,data = data)$delta[1]
+            if (mse_result < min_mse) {
+              min_mse = mse_result
+              min_i = i
+              min_j = j
+              min_k = k
+              min_l = l
+              }
+          
+        }
+    }
+  }
+ }
+
+min_mse
+min_i 
+min_j 
+min_k
+min_l
+```
+Fortunately, the result of optimal polynomial degrees is still the same, so we move on with `m3`.
+```{r}
+m3  =  glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data_cleaned)
+```
+
+# Prediction on Test Data
+## Pre-process test data
+
+```{r}
+test_data = read.csv("test_data_IMDB_Fall_2023.csv")
+test_data <- test_data %>%
+  mutate(
+    maturity_rating = case_when(
+      maturity_rating == c("PG") ~ "PG",
+      maturity_rating == c("PG-13") ~ "PG-13",
+      maturity_rating == c("R") ~ "R",
+      TRUE ~ "other_ratings"
+    )
+  )
+
+test_data <- test_data %>%
+  mutate(
+    language = case_when(
+      language == c("English") ~ "English",
+      TRUE ~ "other_languages"
+    )
+  )
+
+test_data <- test_data %>%
+  mutate(
+    country = case_when(
+      country == c("United States") ~ "USA",
+      country == c("United Kingdom") ~ "UK",
+      TRUE ~ "other_countries"
+    )
+  )
+
+test_data <- test_data %>%
+  mutate(
+    distributor = case_when(
+      distributor == c("Warner Bros.") ~ "Warner Bros.",
+      distributor == c("Universal Pictures") ~ "Universal Pictures",
+      distributor == c("Paramount Pictures") ~ "Paramount Pictures",
+      distributor == c("Twentieth Century Fox") ~ "Twentieth Century Fox",
+      distributor == c("Columbia Pictures Corporation") ~ "Columbia Pictures Corporation",
+      TRUE ~ "other_distributors"
+    )
+  )
+
+test_data <- test_data %>%
+  mutate(
+    production_company = case_when(
+      production_company == c("Warner Bros.") ~ "Warner Bros.",
+      production_company == c("Universal Pictures") ~ "Universal Pictures",
+      production_company == c("Paramount Pictures") ~ "Paramount Pictures",
+      production_company == c("Twentieth Century Fox") ~ "Twentieth Century Fox",
+      production_company == c("Columbia Pictures Corporation") ~ "Columbia Pictures Corporation",
+      production_company == c("New Line Cinema") ~ "New Line Cinema",
+      TRUE ~ "other_production_companies"
+    )
+  )
+
+
+test_data$director_top25p <- ifelse(
+  !is.na(director_counts[test_data$director]) & 
+  test_data$director %in% names(director_counts) &
+  director_counts[test_data$director] >= director_75th_percentile,
+  1, 
+  0
+)
+test_data$cine_top25p <- ifelse(
+  !is.na(cine_counts[test_data$cinematographer]) & 
+  test_data$cinematographer %in% names(cine_counts) & 
+  cine_counts[test_data$cinematographer] >= cine_75th_percentile,
+  1, 
+  0
+)
+
+test_data$movie_meter_IMDBpro = log10(test_data$movie_meter_IMDBpro)
+test_data$actor1_star_meter = log10(test_data$actor1_star_meter)
+test_data$actor2_star_meter = log10(test_data$actor2_star_meter)
+test_data$actor3_star_meter = log10(test_data$actor3_star_meter)
+test_data$nb_news_articles = log10(test_data$nb_news_articles+1)
+test_data$movie_budget= log10(test_data$movie_budget)
+```
+## Fit the model
+
+```{r}
+m3  =  glm(imdb_score ~  movie_budget + release_year  + 
+    language + country + maturity_rating  + 
+    director_top25p + colour_film + nb_faces + 
+    action + musical + romance + sport + horror + drama + 
+    animation + crime + cine_top25p +
+              poly(actor1_star_meter,5) + poly(duration,2) + poly(nb_news_articles,2) + poly(movie_meter_IMDBpro,4),data = data_cleaned)
+col_names <- c("release_year", "language", "country", "maturity_rating", "director_top25p", "colour_film", 
+  "nb_faces", "action", "musical", "romance", "sport", "horror", "drama", "animation", "crime", 
+  "cine_top25p", "movie_budget", "duration", "nb_news_articles", 
+  "movie_meter_IMDBpro", "actor1_star_meter")
+
+for (i in 1:12){
+  values <- test_data[i, col_names]
+values$movie_budget <- as.numeric(values$movie_budget)
+print(predict(m3, newdata = values))
+}
+
+```
+
+
