@@ -27,4 +27,5 @@ This project focuses on developing a predictive model to estimate the IMDb score
     - [Pre-process Test Data](#pre-process-test-data)
     - [Fit the Model](#fit-the-model)
   
-For more details, please refer to the `IMDB_Prediction.html` file.
+For more details on the methodology, please refer to the `IMDB_Prediction.html` file.
+For a detailed EDA and report, please refer to the `IMDB_Prediction_Report.pdf` file.
