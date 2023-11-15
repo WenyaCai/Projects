@@ -4,7 +4,8 @@
 "Gymmie" is an interactive chatbot designed to assist users with fitness-related queries. It offers personalized meal plans, gym information, and other fitness-related services. This Jupyter notebook demonstrates the core functionalities and algorithms behind Gymmie's interaction with users.
 
 For more information, please check `GymmieChatbot.pptx`.
-
+## Flow Chart
+![alt text](https://github.com/WenyaCai/Projects/blob/main/Gymmie%20the%20Chatbot/Chatbot_flowchart.png?raw=true)
 ## Features
 - **Personalized Meal Plans:** Based on user input, Gymmie suggests meal plans tailored to individual preferences and nutritional needs.
 - **Gym Information Management:** Allows users to search for gym information, verifying and managing gym details effectively.
