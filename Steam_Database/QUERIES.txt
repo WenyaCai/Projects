@@ -1,0 +1,278 @@
+-- 1. John Doe's Games
+-- This query finds all games purchased by user 'John Doe'
+SELECT g.game_id, g.game_name, g.price, p.order_date 
+FROM games g
+JOIN purchased p ON g.order_id = p.order_id
+JOIN users u ON p.user_id = u.user_id
+WHERE u.first_name = 'John' AND u.last_name = 'Doe';
+
+-- 2. Game Reviews
+-- This query lists all games that have been reviewed and recommended
+SELECT g.game_id, g.game_name, g.price, r.review, r.rating 
+FROM games g
+JOIN reviews r ON g.game_id = r.game_id
+WHERE r.recommend = true;
+
+-- 3. Total Playtime
+-- This query returns the total playtime for each user for each game
+SELECT u.first_name, u.last_name, g.game_id, g.game_name, pt.all_time_total 
+FROM playtime pt
+JOIN users u ON pt.user_id = u.user_id
+JOIN games g ON pt.game_id = g.game_id;
+
+-- 4. Action Games
+-- This query lists all the games of the genre 'Action'
+SELECT g.game_id, g.game_name, g.price 
+FROM games g
+JOIN games_genres gg ON g.game_id = gg.game_id
+JOIN genres ge ON gg.genre_id = ge.genre_id
+WHERE ge.genre = 'Action';
+
+-- 5. What games were developed by x developer?
+-- This query lists all the games developed by 'DevCorp1'
+SELECT g.game_id, g.game_name, g.price 
+FROM games g
+JOIN games_developers gd ON g.game_id = gd.game_id
+JOIN developers d ON gd.developer_id = d.developer_id
+WHERE d.developer = 'DevCorp1';
+
+-- 6. Different language games
+-- This query lists all the games that support either English or French languages
+SELECT g.game_id, g.game_name, l.language
+FROM games g
+JOIN games_languages gl ON g.game_id = gl.game_id
+JOIN languages l ON gl.language_id = l.language_id
+WHERE l.language IN ('English', 'French');
+
+-- 7. Most Recommended Games
+-- This query finds the games that have the highest number of positive recommendations.
+SELECT game_id, COUNT(*) AS num_recommendations
+FROM reviews
+WHERE recommend = true
+GROUP BY game_id
+ORDER BY num_recommendations DESC;
+
+-- 8. Most Popular Genres
+-- This query identifies the most popular genres based on the number of games in each genre.
+SELECT genre_id, COUNT(*) AS num_games
+FROM games_genres
+GROUP BY genre_id
+ORDER BY num_games DESC;
+
+-- 9. Total Spending
+-- This query demonstrates the total purchase amount for each user.
+SELECT u.first_name, u.last_name, SUM(p.total_price) AS total_purchase
+FROM users u
+JOIN purchased p ON u.user_id = p.user_id
+GROUP BY u.user_id, u.first_name, u.last_name;
+
+-- 10. Ratings and Recommendations.
+-- This query demonstrates the average ratings and average recommendations per game on STEAM.
+SELECT g.game_name,
+       AVG(r.rating) AS avg_rating,
+       SUM(CASE WHEN r.recommend THEN 1 ELSE 0 END) * 100 / COUNT(*) AS recommend_percentage
+FROM games g
+JOIN reviews r ON g.game_id = r.game_id
+GROUP BY g.game_name;
+
+-- 11. Over Average Spending
+-- This query shows the games that have been bought by users who spend more than the average amount on games.
+SELECT g.game_name
+FROM games g
+JOIN purchased p ON g.order_id = p.order_id
+WHERE p.user_id IN (
+    SELECT u.user_id
+    FROM users u
+    JOIN purchased p ON u.user_id = p.user_id
+    GROUP BY u.user_id
+    HAVING SUM(p.total_price) > (
+        SELECT AVG(total_price)
+        FROM purchased
+    )
+);
+
+-- 12. Highly Recommended
+-- This query shows all the games that have been reviews by users who always recommend the games they've played.
+SELECT g.game_name
+FROM games g
+WHERE NOT EXISTS (
+    SELECT r.game_id
+    FROM reviews r
+    WHERE r.game_id = g.game_id
+    AND NOT EXISTS (
+        SELECT r2.game_id
+        FROM reviews r2
+        WHERE r2.user_id = r.user_id
+        AND r2.recommend = true
+    )
+);
+
+-- 13. Highly Reviewed.
+-- This query demonstrates all the users that have reviews games with a higher average rating than the overall average game rating.
+SELECT u.user_id, u.first_name, u.last_name
+FROM users u
+WHERE (
+    SELECT AVG(r.rating)
+    FROM reviews r
+    WHERE r.game_id IN (
+        SELECT game_id
+        FROM games
+    )
+) < (
+    SELECT AVG(r.rating)
+    FROM reviews r
+    WHERE r.user_id = u.user_id
+);
+
+-- 14. Great Bundle Deals
+-- This query shows the bundles that have games with at least one game whose individual price is higher than the average game price.
+SELECT b.bundle_id, b.bundle_name
+FROM bundles b
+WHERE EXISTS (
+    SELECT gb.bundle_id
+    FROM games_bundles gb
+    JOIN games g ON gb.game_id = g.game_id
+    WHERE gb.bundle_id = b.bundle_id
+    AND g.price > (
+        SELECT AVG(price)
+        FROM games
+    )
+);
+
+-- 15. You Recommend, I Buy.
+-- This query demonstrates the users who have purchased all the games that have been reviewed by a user who recommended all the games they have reviewed:
+SELECT u.user_id, u.first_name, u.last_name
+FROM users u
+WHERE NOT EXISTS (
+    SELECT g.game_id
+    FROM games g
+    WHERE NOT EXISTS (
+        SELECT r2.game_id
+        FROM reviews r2
+        WHERE r2.user_id = u.user_id
+        AND r2.recommend = true
+        AND r2.game_id IN (
+            SELECT r.game_id
+            FROM reviews r
+            WHERE r.user_id = u.user_id
+        )
+    )
+    AND g.game_id NOT IN (
+        SELECT pr.order_id
+        FROM purchased pr
+        WHERE pr.user_id = u.user_id
+    )
+);
+
+-- 16. Game Recommendation to Users
+-- The following set of queries recommend a set of games for a specific user, in the case user 1, John Doe, based on their data.
+-- UserPreferredGenres CTE
+WITH UserPreferredGenres AS (
+    SELECT gg.genre_id, SUM(pt.all_time_total) AS total_playtime
+    FROM playtime pt
+    JOIN games_genres gg ON pt.game_id = gg.game_id
+    WHERE pt.user_id = 'u1'  -- Replace with the user ID you are interested in
+    GROUP BY gg.genre_id
+    ORDER BY total_playtime DESC
+    LIMIT 3
+),
+-- AverageRatings CTE
+AverageRatings AS (
+    SELECT g.game_id, AVG(r.rating) AS avg_rating
+    FROM games g
+    LEFT JOIN reviews r ON g.game_id = r.game_id
+    GROUP BY g.game_id
+)
+-- Main Query to Recommend a Game
+SELECT g.game_id as game_recommendation, ar.avg_rating, gg.genre_id
+FROM games g
+JOIN AverageRatings ar ON g.game_id = ar.game_id
+JOIN games_genres gg ON g.game_id = gg.game_id
+LEFT JOIN UserPreferredGenres upg ON gg.genre_id = upg.genre_id
+WHERE g.game_id NOT IN (SELECT game_id FROM playtime WHERE user_id = 'u1')  -- Replace with the actual user ID
+ORDER BY ar.avg_rating DESC, gg.genre_id;
+
+
+-- 17. Trending Reviews.
+-- The queries below are used to return the most trending reviews under games by their review's ranking.
+-- RankedReviews CTE
+WITH RankedReviews AS (
+    SELECT 
+        r.game_id,
+        r.user_id,
+        r.review,
+        r.rating,
+        r.recommend,
+        DENSE_RANK() OVER (PARTITION BY r.game_id ORDER BY r.rating DESC, r.recommend DESC) AS review_rank
+    FROM reviews r
+    WHERE r.posted BETWEEN DATE_SUB(NOW(), INTERVAL 1 MONTH) AND NOW()
+)
+-- Main Query to Identify Trending Reviews (both positive and negative)
+SELECT 
+    g.game_id,
+    rr.user_id,
+    rr.review,
+    rr.rating,
+    rr.recommend
+FROM RankedReviews rr
+JOIN games g ON rr.game_id = g.game_id
+WHERE rr.review_rank <= 3  -- Select top 3 ranked reviews for each game
+ORDER BY rr.game_id, rr.review_rank
+LIMIT 5;
+
+
+-- 18. Lowest Average Rating Within Genre
+-- This query shows all the games that have a lower average rating than the average rating of all games in with the same genre.
+SELECT g.game_name
+FROM games g
+WHERE (
+    SELECT AVG(r.rating)
+    FROM reviews r
+    WHERE r.game_id = g.game_id
+) < (
+    SELECT AVG(r.rating)
+    FROM reviews r
+    JOIN games_genres gg ON r.game_id = gg.game_id
+    WHERE gg.genre_id IN (
+        SELECT gg.genre_id
+        FROM games_genres gg
+        WHERE gg.game_id = g.game_id
+    )
+);
+
+
+-- 19. Games Bought by High Spenders
+-- This query shows the games that were bought by users who have spent more than the average amount on games.
+SELECT g.game_name
+FROM games g
+JOIN purchased p ON g.order_id = p.order_id
+WHERE p.user_id IN (
+    SELECT u.user_id
+    FROM users u
+    JOIN purchased p ON u.user_id = p.user_id
+    GROUP BY u.user_id
+    HAVING SUM(p.total_price) > (
+        SELECT AVG(total_price)
+        FROM purchased
+    )
+);
+
+-- 20. Multiplayer Game Enjoyer
+-- This query shows all the users who have played all the games tagged as "Multiplayer".
+SELECT u.user_id, u.first_name, u.last_name
+FROM users u
+WHERE NOT EXISTS (
+    SELECT t.tag_id
+    FROM tags t
+    WHERE t.tag = 'Multiplayer'
+    AND NOT EXISTS (
+        SELECT pt.game_id
+        FROM playtime pt
+        WHERE pt.user_id = u.user_id
+        AND pt.game_id IN (
+            SELECT gt.game_id
+            FROM games_tags gt
+            WHERE gt.tag_id = t.tag_id
+        )
+    )
+);

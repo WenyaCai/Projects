@@ -1,0 +1,339 @@
+-- User table creation
+create table users(
+	user_id varchar(50),
+    first_name varchar(50),
+    last_name varchar(50),
+    phone varchar(50),
+    email varchar(50),
+    primary key(user_id)
+);
+
+-- Purchase table creation
+create table purchased(
+	order_id varchar(50),
+    order_date date,
+    total_price numeric(12,0),
+    user_id varchar(50),
+    primary key(order_id),
+    foreign key(user_id) references users(user_id)
+);
+
+-- Game table creation
+create table games(
+	game_id varchar(15),
+  	game_name varchar(30),
+    price numeric(5,2),
+    discounted_price numeric(5,2),
+    release_date date,
+    order_id varchar(50),
+    primary key(game_id),
+    foreign key(order_id) references purchased(order_id)
+);
+
+-- Review table creation
+create table reviews(
+	review_id varchar(50),
+    posted date,
+    rating numeric(5,0),
+    recommend boolean,
+    review text,
+    user_id varchar(50),
+    game_id varchar(15),
+    primary key(review_id),
+    foreign key(user_id) references users(user_id),
+    foreign key(game_id) references games(game_id)
+);
+
+-- Playtime table creation
+create table playtime(
+	playtime_id varchar(50),
+    all_time_total numeric(12,0),
+    two_week_total numeric(12,0),
+    game_id varchar(15),
+    user_id varchar(50),
+    primary key(playtime_id),
+    foreign key(game_id) references games(game_id)
+); 
+
+-- Genres table creation
+create table genres(
+	genre_id varchar(50),
+    genre varchar(50),
+    primary key(genre_id)
+);
+
+-- Game-to-genre table creation
+create table games_genres(
+	genre_id varchar(50),
+    game_id varchar(15),
+    primary key(genre_id,game_id),
+    foreign key(game_id) references games(game_id),
+    foreign key(genre_id) references genres(genre_id)
+);
+
+-- Tags table creation
+create table tags(
+	tag_id varchar(50),
+    tag varchar(50),
+    primary key(tag_id)
+);
+
+-- Games-to-tags table creation
+create table games_tags(
+	tag_id varchar(50),
+    game_id varchar(15),
+    primary key(tag_id,game_id),
+    foreign key(game_id) references games(game_id),
+    foreign key(tag_id) references tags(tag_id)
+);
+
+-- Language table creation
+create table languages(
+	language_id varchar(50),
+    language varchar(50),
+    primary key(language_id)
+);
+
+-- Games-to-languages table creation
+create table games_languages(
+	language_id varchar(50),
+    game_id varchar(15),
+    primary key(language_id,game_id),
+    foreign key(game_id) references games(game_id),
+    foreign key(language_id) references languages(language_id)
+);
+
+-- Developers table creation
+create table developers(
+	developer_id varchar(50),
+    developer varchar(100),
+    primary key(developer_id)
+);
+
+-- Games-to-developers table creation
+create table games_developers(
+	developer_id varchar(50),
+    game_id varchar(15),
+    primary key(developer_id,game_id),
+    foreign key(game_id) references games(game_id),
+    foreign key(developer_id) references developers(developer_id)
+);
+
+-- Bundles table creation
+create table bundles(
+	bundle_id varchar(15),
+    bundle_name varchar(100),
+    bundle_normal_price numeric(6,0),
+    bundle_final_price numeric(6,0),
+    bundle_discount numeric(2,2),
+    primary key(bundle_id)
+);
+
+-- Games-to-bundles table creation
+create table games_bundles(
+	bundle_id varchar(15),
+    game_id varchar(15),
+    primary key(bundle_id,game_id),
+    foreign key(game_id) references games(game_id),
+    foreign key(bundle_id) references bundles(bundle_id)
+);
+
+-- Inserting data into users
+insert into users(user_id, first_name, last_name, phone, email)
+values
+('u1', 'John', 'Doe', '123-456-7890', 'john.doe@example.com'),
+('u2', 'Jane', 'Smith', '234-567-8901', 'jane.smith@example.com'),
+('u3', 'Alice', 'Johnson', '345-678-9012', 'alice.johnson@example.com'),
+('u4', 'Bob', 'Williams', '456-789-0123', 'bob.williams@example.com'),
+('u5', 'Charlie', 'Brown', '567-890-1234', 'charlie.brown@example.com');
+
+-- Inserting data into purchased
+insert into purchased(order_id, order_date, total_price, user_id)
+values
+('o1', '2023-01-10', 150, 'u1'),
+('o2', '2023-02-15', 200, 'u2'),
+('o3', '2023-03-05', 100, 'u3'),
+('o4', '2023-03-20', 250, 'u4'),
+('o5', '2023-04-01', 180, 'u5'),
+('o6', '2023-08-01', 25, 'u1'),
+('o7', '2023-08-02', 35, 'u2');
+
+-- Inserting data into games
+insert into games(game_id, game_name, price, discounted_price, release_date, order_id)
+values
+('g1', 'Horizons', 50.00, 45.00, '2022-10-01', 'o1'),
+('g2', 'Nier Automata', 60.00, 55.00, '2022-12-15', 'o2'),
+('g3', 'Forza', 40.00, 35.00, '2022-11-05', 'o3'),
+('g4', 'Persona 5', 30.00, 25.00, '2023-01-20', 'o4'),
+('g5', 'Sun Haven', 20.00, 15.00, '2022-09-01', 'o5'),
+('g6', 'Elden Ring', 25.00, 20.00, '2022-08-01', 'o1'),
+('g7', 'Lost Ark', 35.00, 30.00, '2022-07-15', 'o2');
+
+-- Inserting data into reviews
+insert into reviews(review_id, posted, rating, recommend, review, user_id, game_id)
+values
+('r1', '2023-01-11', 4, true, 'Great game!', 'u1', 'g1'),
+('r2', '2023-02-16', 3, false, 'Not my type.', 'u2', 'g2'),
+('r3', '2023-03-06', 5, true, 'Amazing experience!', 'u3', 'g3'),
+('r4', '2023-03-21', 4, true, 'Good overall.', 'u4', 'g4'),
+('r5', '2023-04-02', 3, false, 'Could be better.', 'u5', 'g5'),
+('r6', '2023-08-01', 5, true, 'Fantastic!', 'u1', 'g6'),
+('r7', '2023-08-02', 4, true, 'Very good!', 'u2', 'g7');
+
+
+-- Inserting data into playtime
+insert into playtime(playtime_id, all_time_total, two_week_total, game_id, user_id)
+values
+('p1', 50, 10, 'g1', 'u1'),
+('p2', 60, 15, 'g2', 'u2'),
+('p3', 40, 5, 'g3', 'u3'),
+('p4', 30, 7, 'g4', 'u4'),
+('p5', 20, 3, 'g5', 'u5'),
+('p6', 100, 20, 'g1', 'u1'),
+('p7', 150, 30, 'g2', 'u1'),
+('p8', 200, 40, 'g3', 'u1'),
+('p9', 50, 10, 'g4', 'u2'),
+('p10', 60, 12, 'g5', 'u2');
+
+-- Inserting data into genres
+insert into genres(genre_id, genre)
+values
+('ge1', 'Action'),
+('ge2', 'Adventure'),
+('ge3', 'RPG'),
+('ge4', 'Strategy'),
+('ge5', 'Simulation');
+
+-- Inserting data into games_genres
+insert into games_genres(genre_id, game_id)
+values
+('ge1', 'g1'),
+('ge2', 'g2'),
+('ge3', 'g3'),
+('ge4', 'g4'),
+('ge5', 'g5'),
+('ge3', 'g6'),
+('ge4', 'g7');
+
+-- Inserting data into tags
+insert into tags(tag_id, tag)
+values
+('t1', 'Multiplayer'),
+('t2', 'Singleplayer'),
+('t3', 'Open World'),
+('t4', 'Fantasy'),
+('t5', 'Sci-Fi');
+
+-- Inserting data into games_tags
+insert into games_tags(tag_id, game_id)
+values
+('t1', 'g1'),
+('t2', 'g2'),
+('t3', 'g3'),
+('t4', 'g4'),
+('t5', 'g5');
+
+-- Inserting data into languages
+insert into languages(language_id, language)
+values
+('l1', 'English'),
+('l2', 'French'),
+('l3', 'Spanish'),
+('l4', 'German'),
+('l5', 'Japanese');
+
+-- Inserting data into games_languages
+insert into games_languages(language_id, game_id)
+values
+('l1', 'g1'),
+('l2', 'g2'),
+('l3', 'g3'),
+('l4', 'g4'),
+('l5', 'g5');
+
+-- Inserting data into developers
+insert into developers(developer_id, developer)
+values
+('d1', 'DevCorp1'),
+('d2', 'DevStudio2'),
+('d3', 'GameMakers3'),
+('d4', 'ProdTech4'),
+('d5', 'BuildSoft5');
+
+-- Inserting data into games_developers
+insert into games_developers(developer_id, game_id)
+values
+('d1', 'g1'),
+('d2', 'g2'),
+('d3', 'g3'),
+('d4', 'g4'),
+('d5', 'g5');
+
+-- Inserting data into bundles
+insert into bundles(bundle_id, bundle_name, bundle_normal_price, bundle_final_price, bundle_discount)
+values
+('b1', 'Bundle One', 100, 90, 0.1),
+('b2', 'Bundle Two', 150, 130, 0.15),
+('b3', 'Bundle Three', 200, 170, 0.2),
+('b4', 'Bundle Four', 250, 215, 0.14),
+('b5', 'Bundle Five', 300, 270, 0.1);
+
+-- Inserting data into games_bundles
+insert into games_bundles(bundle_id, game_id)
+values
+('b1', 'g1'),
+('b2', 'g2'),
+('b3', 'g3'),
+('b4', 'g4'),
+('b5', 'g5');
+
+-- Linking new games to new orders
+UPDATE games SET order_id = 'o6' WHERE game_id = 'g6';
+UPDATE games SET order_id = 'o7' WHERE game_id = 'g7';
+
+-- Inserting more data into reviews
+INSERT INTO reviews(review_id, posted, rating, recommend, review, user_id, game_id)
+VALUES
+('r8', '2023-07-15', 5, true, 'Absolutely loved it!', 'u3', 'g1'),
+('r9', '2023-07-16', 4, true, 'Very enjoyable.', 'u4', 'g2'),
+('r10', '2023-07-17', 5, true, 'A masterpiece!', 'u5', 'g3'),
+('r11', '2023-07-18', 3, false, 'It was okay.', 'u1', 'g4'),
+('r12', '2023-07-19', 4, true, 'Great game with minor flaws.', 'u2', 'g5'),
+('r13', '2023-07-20', 5, true, 'Best game ever!', 'u3', 'g6'),
+('r14', '2023-07-21', 2, false, 'Not worth it.', 'u4', 'g7');
+
+-- Inserting more data into games
+INSERT INTO games(game_id, game_name, price, discounted_price, release_date, order_id)
+VALUES
+('g8', 'Omori', 45.00, 40.00, '2023-07-01', 'o3'),
+('g9', 'Hogwarts Legacy', 55.00, 50.00, '2023-07-02', 'o4');
+
+-- Inserting more data into reviews
+INSERT INTO reviews(review_id, posted, rating, recommend, review, user_id, game_id)
+VALUES
+('r15', '2023-07-22', 5, true, 'Incredible!', 'u5', 'g8'),
+('r16', '2023-07-23', 4, true, 'Very good but needs improvement.', 'u1', 'g9');
+INSERT INTO reviews(review_id, posted, rating, recommend, review, user_id, game_id)
+VALUES
+('r17', '2023-07-24', 1, false, 'Terrible experience!', 'u2', 'g1'),
+('r18', '2023-07-25', 2, false, 'Not worth the money.', 'u3', 'g1'),
+('r19', '2023-07-26', 5, true, 'A must-play!', 'u4', 'g2'),
+('r20', '2023-07-27', 1, false, 'Full of bugs.', 'u5', 'g2'),
+('r21', '2023-07-28', 4, true, 'Good but could be better.', 'u1', 'g3'),
+('r22', '2023-07-29', 2, false, 'Disappointing.', 'u2', 'g3'),
+('r23', '2023-07-30', 5, true, 'Fantastic!', 'u3', 'g4'),
+('r24', '2023-07-31', 1, false, 'Waste of time.', 'u4', 'g4'),
+('r25', '2023-08-01', 4, true, 'Very engaging.', 'u5', 'g5'),
+('r26', '2023-08-02', 2, false, 'Needs a lot of improvement.', 'u1', 'g5');
+INSERT INTO reviews(review_id, posted, rating, recommend, review, user_id, game_id)
+VALUES
+('r27', '2023-08-03', 3, false, 'Mediocre at best.', 'u2', 'g1'),
+('r28', '2023-08-04', 2, false, 'Not what I expected.', 'u3', 'g2'),
+('r29', '2023-08-05', 1, false, 'Terrible!', 'u4', 'g3'),
+('r30', '2023-08-06', 3, true, 'It\'s okay.', 'u5', 'g4'),
+('r31', '2023-08-07', 2, false, 'Could be much better.', 'u1', 'g5'),
+('r32', '2023-08-08', 4, true, 'Almost perfect!', 'u2', 'g1'),
+('r33', '2023-08-09', 1, false, 'Don\'t buy it.', 'u3', 'g2'),
+('r34', '2023-08-10', 3, true, 'Decent game.', 'u4', 'g3'),
+('r35', '2023-08-11', 2, false, 'Not worth the hype.', 'u5', 'g4'),
+('r36', '2023-08-12', 4, true, 'Highly enjoyable!', 'u1', 'g5');
